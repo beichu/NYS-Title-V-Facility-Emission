@@ -1,0 +1,451 @@
+---
+title: "Data-Driven Exploration of Title V Facility Emissions in New York"
+subtitle: A Work Sample
+author: "Bei Chu"
+output: 
+  bookdown::pdf_document2: default
+fontsize: 12pt
+link-citations: true
+toc: false
+urlcolor: blue
+biblio-style: apsr
+bibliography: references.bib
+figsintext: yes
+header-includes:
+   - \usepackage[singlelinecheck=false]{caption}
+   - \usepackage{floatrow}
+   - \floatsetup[figure]{capposition=top}
+   - \floatsetup[table]{capposition=top}
+   - \floatplacement{figure}{H}
+
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::write_bib(.packages(), file = "references.bib")
+
+```
+
+## Introduction
+
+This work sample presents an analysis of reported air pollutant emissions from Title V facilities across New York State. Title V facilities are major sources of air pollution that require operating permits under Title V of the U.S. Clean Air Act. In the state of New York, these permits are issued by the Department of Environmental Conservation and mandate that facilities report emissions of a number of regulated pollutants, including particulates, PM10 and PM2.5, Sulfur Dioxide (SO~2~), Nitrogen Oxides (NO~x~), Volatile Organic Compounds (VOCs), Carbon Monoxide (CO), Hazardous Air Pollutants (HAPs), and Carbon Dioxide (CO~2~).  
+
+The analysis includes visualizations of Title V facility locations and summary statistics of reported air emissions. Additionally, it features a focused analysis of HAPs, which are known to cause cancer and other serious health effects.
+
+The HAPs analysis addresses the following key questions:  
+1. What is the temporal trend in HAP emissions across New York State?  
+2. Which industry sectors contribute most significantly to HAP emissions?  
+3. What are the spatial patterns of HAP emissions throughout the state?  
+
+
+
+## Data Sources and Tools
+This analysis draws from two publicly available datasets:
+
+1. [<u>Title V Emissions Inventory: Beginning 2010</u>](https://data.ny.gov/Energy-Environment/Title-V-Emissions-Inventory-Beginning-2010/4ry5-tfin/about_data) - Annual reported emissions from Title V facilities across New York State
+2. [Standard Industrial Classification Code Major Groups)](https://www.osha.gov/data/sic-manual) - Industry classification used to group facilities by sector
+
+The report was prepared using R version 4.5.1 with R Markdown, leveraging a number of R packages for data wrangling, geospatial analysis, and visualization. The complete list of R packages and code for this work can be found here
+
+
+```{r include=F, echo=F}
+# Load libraries and data
+library(tidyverse)
+library(skimr)
+library(kableExtra)
+library(formattable)
+library(glue)
+library(scales)
+library(cowplot)
+library(RColorBrewer)
+library(rvest)
+library(ggmap)
+library(rgeoda)
+library(sf)
+library(basemaps) 
+library(tigris)
+library(trend)
+library(grateful)
+library(bookdown)
+
+
+# Load datasets
+emission_data <- read.csv("data/Title_V_Emissions_Inventory__Beginning_2010.csv")
+permits <- read.csv("data/Issued_Title_V_Facility_Permits.csv")
+
+
+
+```
+
+```{r include=F, echo=F}
+# This code chunk is intended for exploratory analysis and will note be included in the final work sample.
+# The emissions dataset contains facility names, locations, SIC codes (Standard Industrial Classification Codes) and annual pollutant quantities reported in tons. 
+
+skim <- skim(emission_data)
+
+# Check whether the locations are unique for each facility in the emission data.
+emission_data %>%
+    select(DEC.ID, Facility.Name, Location) %>%
+    distinct() %>%
+    group_by(DEC.ID) %>%
+    add_tally() %>%
+    filter(n > 1)
+
+# It looks like there are multiple locations for some DEC.ID/Facility names. Does each DEC.ID correspond to one Facility.Name? 
+emission_data %>%
+    select(DEC.ID, Facility.Name) %>%
+    distinct() %>%
+    group_by(DEC.ID) %>%
+    add_tally() %>%
+    filter(n > 1) %>%
+    arrange(DEC.ID) 
+```
+
+\pagebreak
+
+```{r include=F, echo=F}
+#To ensure consistency, facility names, coordinates, county, and municipality information need to be harmonized.For simplicity, the DEC.ID will be added to facility names to make them unique. If there are multiple lat/longs for the same DEC.ID, the lat/longs will be averaged.
+unique_facilities <- emission_data %>%
+    select(DEC.ID, Facility.Name, Location) %>%
+    distinct() %>%
+    group_by(DEC.ID) %>%
+    mutate(Location = str_replace_all(Location, "POINT \\(|\\)", "")) %>% # remove extra characters from coordinates
+    separate(Location, into = c("Longitude", "Latitude"), sep = " ") %>% # separate coordinates string into long/lat columns
+    mutate(Longitude = as.numeric(Longitude),
+           Latitude = as.numeric(Latitude)) %>% # convert coordinates into numeric data type
+    mutate(Longitude = mean(Longitude, na.rm = T),
+           Latitude = mean(Latitude, na.rm = T)) %>% # calculate average of lat/long
+    slice(1) %>% # select first row of each group
+    mutate(Facility.Name = glue("{Facility.Name} ({DEC.ID})")) %>% # add DEC.ID to facility names so they are unique
+    rename(Facility_name_clean = Facility.Name)
+  
+
+# Join the cleaned facility names back into the data frame
+emission_data_clean <- emission_data %>%
+    left_join(unique_facilities, by = "DEC.ID") %>%
+    select(-Location, -Facility.Name, -County, -Municipality) %>%
+    select(Year, Facility_name_clean, Latitude, Longitude, everything())
+```
+
+
+```{r include=F, echo=F}
+
+
+# Next, I will categorize the SIC codes based on their major industry groups using information from the OSHA SIC manual (https://www.osha.gov/data/sic-manual) so the SIC can be used in further analysis. One value is missing from the SIC.Code field, where the facility name is "PRINCETON APARTMENTS - MARIANI MANAGEMENT CORP". Based on the information from the SIC manual, the appropriate  SIC code for Operators of Apartment Buildings is 6513.
+
+emission_data_clean <- emission_data_clean %>%
+    mutate(SIC.Code = ifelse(Facility_name_clean == "PRINCETON APARTMENTS - MARIANI MANAGEMENT CORP", 6531, SIC.Code))
+
+# SIC major group information was obtained from the SIC Manual. The webpage was downloaded and saved as an HTML file in the project folder, and the data was subsequently scraped from this file.
+
+SIC_info <- read_html("data/SIC Manual _ Occupational Safety and Health Administration.html") %>%
+    html_nodes("ol ul li") %>%
+    html_text() %>%
+    enframe(value = "SIC") %>%
+    separate(SIC, into = c("Major_Group", "SIC_Desc"), sep = ":") %>%
+    mutate(Major_Group = str_replace(Major_Group, "Major Group ", ""),
+           SIC_Desc = trimws(SIC_Desc)) %>%
+    select(-name)
+
+
+emission_data_clean <- emission_data_clean %>%
+    mutate(SIC_group_code = str_sub(SIC.Code, 1, 2)) %>%
+    left_join(SIC_info, by = join_by("SIC_group_code" == "Major_Group" ))
+```
+
+## Locations of Title V Facilities in New York
+
+There are a total of `r nrow(unique_facilities)` Title V facilities in the dataset. Figure \@ref(fig:fig1) shows the locations of Title V facilities across New York State. These facilities are notably more concentrated around urban centers, such as New York City, Buffalo, and Albany, reflecting higher levels of industrial activity in those regions. While the rural areas of the state shows relatively fewer facilities, suggesting regional variation in emission sources. 
+
+Two counties, Hamilton county and Otsego county, report no Title V facilities. Both counties contain large wilderness areas, have lower population density, and limited industrial development. The observed pattern highlights the importance of considering spatial distribution when making environmental policy and emissions management strategies.
+
+```{r include = F, message=F, warning=F, echo=F, fig.height=4.5, fig.width=6 }
+
+# Get NY boundaries
+state_boundaries <- counties(state = "NY") %>%
+    st_transform(crs = st_crs(3857)) # 3857 is the basemap crs 
+
+# Convert to spatial object
+facilities_sf <- st_as_sf(unique_facilities, coords = c("Longitude", "Latitude"), crs = st_crs(4326)) %>%
+     st_transform(crs = st_crs(3857))
+
+# Which counties do not contain any Title V facilities?
+counties <- state_boundaries$NAME
+titleV_counties <- unique(emission_data$County) %>% str_to_title()
+setdiff(counties, titleV_counties)
+```
+
+
+```{r fig1, message=F, warning=F, echo=F, fig.align='center', fig.cap="Title V Facility Locations in New York State"}
+# Fig 1 Location map 
+basemap_ggplot(state_boundaries, map_service = "osm", map_type = "streets", verbose = F) +
+    geom_sf(data = state_boundaries, fill = "transparent") +
+    geom_sf(data = facilities_sf, color = "gray30") +
+    theme(panel.background = element_blank(),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    plot.title.position = "panel",
+    plot.title = element_text(hjust = 0),
+    plot.margin = margin(0,0,0,0, unit = "pt"))
+
+```
+\pagebreak
+## Industry Sectors of Title V Facilities
+
+OSHA's SIC Manual categorizes industries into major groups based on their economic activities. This classification system provides a structured framework for analyzing the types of facilities regulated under Title V. To better understand the industry distribution of Title V facilities, Table \@ref(tab:table1) summarizes the top industry sectors by facility count in New York State. 
+
+The largest sector, electric, gas, and sanitary services, includes 199 facilities. These facilities typically include power plants, natural gas distribution centers, and waste management operations, all of which potentially have large environmental impact.
+
+Sectors ranked 2 through 10 each contain between 12 and 30 facilities and represent industries such as health services, chemical and allied products, real estate, and so on. All remaining sectors have 12 or fewer facilities.
+
+```{r table1, message=F, warning=F, echo=F}
+# Facility count in each industry sector
+table1 <- emission_data_clean %>%
+    select(DEC.ID, SIC_Desc) %>%
+    distinct() %>%
+    group_by(SIC_Desc) %>%
+    summarise(`Number of Facilities` = n()) %>%
+    arrange(desc(`Number of Facilities`)) %>%
+    mutate(Ranking = row_number()) %>%
+    mutate(Ranking = ifelse(Ranking <= 10, Ranking, 11)) %>%
+    ungroup() %>%
+    group_by(Ranking) %>%
+    summarise(`Number of Facilities` = sum(`Number of Facilities`),
+              Industries = ifelse(Ranking <=10, SIC_Desc, "Other")) %>%
+    distinct() %>%
+    ungroup() %>%
+    select(Industries, `Number of Facilities`)
+
+    table1$Industries[11] <- paste0(table1$Industries[11], 
+                                "$^*$")
+    
+    kable(table1, caption = "Top Industries in Title V Facilities", align = "l", 
+          escape = F, format = "latex", booktabs = T) %>%
+    footnote(symbol = c("Other industries having 12 or less facilities")) %>%
+    kable_classic() %>%
+    row_spec(1:nrow(table1), hline_after = F) %>%
+    kable_styling(latex_options = "hold_position", full_width = T)
+    
+
+```
+\pagebreak
+## Summary Statistics of Reported Emission Data
+
+Table \@ref(tab:table2) presents summary statistics for each reported pollutant, including annual range, mean, median, and cumulative totals across all available years. 
+Carbon dioxide (Co~2~) stands out with the highest cumulative emissions of 603,630,580 tons state wide. CO~2~ also has the highest median annual value of 12,965 tons, indicating that CO~2~ as a ubiquitous byproduct of combustion and industrial activity
+
+In contrast, all other pollutants, including CO, NO~x~, SO~2~, Particulates, VOC, PM10, PM2.5, and HAPs, have median annual value of 13.7 tons or less. Despite their lower medians, several of these pollutants still show sizable cumulative totals, particularly CO and NO~x~, which are commonly associated with combustion and transportation-related sources.
+
+For all nine pollutant categories, the median values are consistently lower than the corresponding means. This pattern suggests a right-skewed distribution, where most facilities report relatively low emissions, while a small number of high-emitting facilities significantly elevate the average.
+
+```{r table2, message=F, warning=F, echo=F}
+
+# pivot emission data into long format for analysis
+emission_data_clean <- emission_data_clean %>%
+    pivot_longer(cols = contains("tons"), names_to = "Analyte", values_to = "Tonage") %>%
+    mutate(Analyte = str_replace(Analyte, "..tons.", ""))
+
+summary_stats <- emission_data_clean %>%
+    group_by(SIC_Desc, Analyte) %>%
+    summarise( Mean = mean(Tonage, na.rm = T), 
+           Min = min(Tonage, na.rm = T),
+           Median = median(Tonage, na.rm = T),
+           Max = max(Tonage, na.rm = T),
+           Total = sum(Tonage, na.rm = T)) %>%
+        mutate(Mean = round(Mean, 2),
+           Min = round(Min, 2),
+           Median = round(Median, 2),
+           Max = round(Max, 2),
+           Total = round(Total, 2))
+
+smart_rounding <- function(num){
+    stopifnot(is.numeric(num))
+    if(num >= 100){
+        res <- scales::comma(round(num, 0))
+    }else if(num >= 10){
+        res <- as.character(round(num, 1))
+    }else{
+        res <- as.character(round(num, 2))
+    }
+    return(res)
+}
+summary_stats_by_analyte <- emission_data_clean %>%
+    group_by(Analyte) %>%
+    mutate(Analyte = case_when(Analyte == "SO2" ~ "SO$_2$",
+                               Analyte == "CO2" ~ "CO$_2$",
+                               Analyte == "HAPS" ~ "HAPs",
+                               Analyte == "NOx" ~ "NO$_x$",
+                               TRUE ~ Analyte)) %>%
+    summarise(Mean = mean(Tonage, na.rm = T), 
+           Min = min(Tonage, na.rm = T),
+           Median = median(Tonage, na.rm = T),
+           Max = max(Tonage, na.rm = T),
+           Total = sum(Tonage, na.rm = T)) %>%
+    rowwise() %>%
+        mutate(
+           Mean = smart_rounding(Mean),
+           Range = paste0(smart_rounding(Min), " - ", smart_rounding(Max)),
+           Median = smart_rounding(Median),
+           Max = smart_rounding(Max),
+           Total = smart_rounding(Total)) %>%
+    select(Analyte, Range, Mean, Median, Total) 
+
+# Table 2
+kable(summary_stats_by_analyte,
+      caption = "Summary Statisics of Title V Facility Air Emissions in New York State",
+      align = "l",
+      format = "latex",
+      booktabs = T,
+      escape=F) %>% 
+    add_header_above(c(" " = 1, "Tons/Year" = 4)) %>%
+    kable_classic() %>%
+    row_spec(1:nrow(summary_stats_by_analyte)-1, hline_after = F) %>%
+    kable_styling(full_width = T, latex_options = "hold_position")
+```
+
+
+
+```{r, include=F,  message=F, warning=F, echo=F}
+
+# Mann-Kendall Test shows that the null hypothesis is rejected based on P-value of 0.01427 and alternative hypothesis is selected and the data has a downward trend
+HAPS_by_year <- emission_data_clean %>%
+   filter(Analyte == "HAPS") %>%
+  group_by(Year) %>%
+  summarize(HAPs = sum(Tonage)) 
+
+mk_stats <- mk.test(HAPS_by_year$HAPs, alternative = "less")
+
+```
+\pagebreak
+## HAPS Temporal Trends Across New York State
+
+Figure \@ref(fig:fig2) presents the timeseries of total annual HAPs tonnage reported in New York State. Visual inspection of the timeseries plot suggests a gradual decline in reported HAPs emissions over time, with a slight increase after the year 2020. To evaluate the statistical significance of this trend, a Mann-Kendall trend analysis was performed. Mann-Kendal test is a non-parametric test commonly used to assess environmental trends, as it does not assume normality and is robust to outliers. The null hypothesis assumes no monotonic trend in HAPs emissions across the years, while the alternative hypothesis assume a decreasing trend.
+
+The test yielded a value of S `r ifelse(mk_stats$estimates[['S']] < 0, "<", ">=")` and p-value of `r mk_stats$p.value``.Since the p-value is below the conventional threshold of 0.05, the null hypothesis is rejected, indicating a statistically significant decreasing trend at the 0.05 significance level.
+
+```{r fig2, message=F, warning=F, echo=F, fig.height=4.5, fig.width=6.5, fig.align='center', fig.cap="Trends in Reported HAPs in New York State"}
+
+# fig 2
+ggplot(HAPS_by_year, aes(x = Year, y = HAPs)) + 
+  geom_line() +
+  geom_point() +
+  labs(y = "Total Reported HAPs in New York State (Tons)") +
+  xlim(2007, 2025) +
+  scale_x_continuous(breaks=seq(2010,2025,2)) +
+  theme_bw() +
+  theme(axis.title.y = element_text(size = 10))
+
+```
+
+\pagebreak
+## Top HAPs Emission by Industry
+As previously noted, Hazardous Air Pollutants (HAPs) pose significant risks to human health and were therefore selected for focused analysis in this report. Figure \@ref(fig:fig3) highlights the top industry sectors contributing to total HAP emissions across Title V facilities in New York State. The Electric, Gas, and Sanitary Services sector accounts for the largest share, contributing 48.2% of total reported HAPs. This is followed by Primary Metal Industries at 22.4%, and Chemical and Allied Products at 8.8%. Together, these three sectors account for nearly 80% of all reported HAP emissions, underscoring the disproportionate impact of a few key sectors and provide a foundation for targeted HAPs regulatory and mitigation strategies.
+
+```{r fig3, message=F, warning=F, echo=F, fig.height=5, fig.width=6, fig.align='center', fig.cap="Title V Facility Hazardous Air Pollutants (HAPs) Emission in New York State"}
+
+
+HAPs_by_SIC <- emission_data_clean %>%
+    filter(Analyte == "HAPS") %>%
+    group_by(SIC_Desc) %>%
+    summarise(Mean = mean(Tonage, na.rm = T),
+              Total = sum(Tonage, na.rm = T)) %>%
+        mutate(Mean = round(Mean, 2),
+               Total_by_SIC = round(Total, 2)) %>%
+  ungroup() %>%
+  mutate(HAPS_tot = sum(Total_by_SIC)) %>%
+   mutate(proportion = Total_by_SIC/HAPS_tot) %>%
+  arrange(desc(proportion)) %>%
+  mutate(ranking = row_number()) %>%
+  mutate(ranking =  ifelse(ranking <=5, ranking, 6),
+         top5 = ifelse(ranking <=5, SIC_Desc, "Other")) %>%
+  group_by(top5) %>%
+  mutate(proportion = sum(proportion)) %>%
+  mutate(percentage_label = paste0(as.character(round(proportion, 3)*100), "%")) %>%
+  select(top5, ranking, proportion, percentage_label) %>%
+  distinct()
+    
+
+ggplot(HAPs_by_SIC) +
+    geom_col(aes(y = reorder(top5, ranking), x = proportion), fill = "grey50") +
+    geom_text(aes(x = proportion, y = reorder(top5, ranking), label = percentage_label, hjust = ifelse(proportion > .05, 1.2, -.2)), size = 3) + 
+    facet_wrap(~ reorder(top5, ranking), ncol = 1, scales = "free_y") +
+    scale_x_continuous(labels = comma,
+                       expand = c(0, 0)) +
+    scale_y_discrete(guide = "none") +
+    theme_minimal() +
+      theme(panel.background = element_blank(),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    plot.title.position = "panel",
+    plot.title = element_text(hjust = 0),
+    plot.margin = margin(0,0,0,0, unit = "pt"),
+    strip.text = element_text(hjust = 0, 
+                              margin = margin(1, 0, 1, 0), 
+                              size = rel(0.65),
+                              face = "bold"))
+
+
+```
+\pagebreak
+
+## Average Annual HAPs Emission at the Individual Facility Level
+To understand HAPs emission at the individual facility level, Figure \@ref(fig:fig4) visualizes average annual HAPs emissions on a map. Facilities are colored by emission intensity, with darker colors indicating higher average emissions. The majority of facilities emit 12 tons or less of HAPs per year, highlighting a concentration of relatively low-emitting sources. This is consistent to the previous finding that the median HAPs emission is 0 ton per year Table \@ref(tab:table2). However, a small subset of facilities exceeds this threshold, with the highest-emitting site reporting an average of 216 tons annually. This contrast shows a highly skewed distribution, where a few facilities contribute disproportionately to the overall HAPs emissions in the state. The skewness in emission distribution highlights the importance to targeted regulatory and mitigation strategies.
+
+```{r , include=F, message=F, warning=F, echo=F}
+
+
+HAPS_df <- emission_data_clean %>% 
+  filter(Analyte == "HAPS") %>%
+  select(Year, Facility_name_clean, Latitude, Longitude, SIC_Desc, Tonage) %>%
+  group_by(Facility_name_clean, Latitude, Longitude, SIC_Desc) %>%
+  summarise(Tonage_per_year = mean(Tonage)) %>%
+  arrange(Tonage_per_year)
+
+# Convert HAPs data to spatial object
+HAPS_sf <- st_as_sf(HAPS_df, coords = c("Longitude", "Latitude"), crs = st_crs(4326)) %>%
+     st_transform(crs = st_crs(3857))
+breaks <- natural_breaks(5, HAPS_sf['Tonage_per_year'])
+
+HAPS_sf <-HAPS_sf %>%
+  mutate(`Tons per Year` = case_when(Tonage_per_year <= breaks[1] ~ '0-0.617',
+                                    Tonage_per_year <= breaks[2] ~ '0.617-12.736',
+                                    Tonage_per_year <= breaks[3] ~ '12.736-64.238',
+                                    Tonage_per_year <= breaks[4] ~ '64.238-211.636',
+                                    TRUE ~ '> 211.636')) %>%
+  mutate(`Tons per Year` = ordered(`Tons per Year`, levels = c('0-0.617', '0.617-12.736',
+                                                             '12.736-64.238', '64.238-211.636',
+                                                             '> 211.636')))
+```
+
+```{r fig4, message=F, warning=F, echo=F, fig.align='center', fig.cap="Average Annual HAPs Emission in New York Title V Facilities", fig.height=5, fig.width=6}
+basemap_ggplot(state_boundaries, map_service = "osm", map_type = "streets", verbose = F) +
+    geom_sf(data = state_boundaries, fill = "transparent") +
+    geom_sf(data = HAPS_sf, aes(color = `Tons per Year`), alpha = 1) +
+    scale_color_brewer(palette = "YlOrRd", direction = 1) +
+    theme_nothing(legend = TRUE) +
+    theme(panel.background = element_blank(),
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    plot.title = element_text(hjust = 0),
+    legend.position = "bottom",
+    legend.title = element_text(size = 8),
+    legend.text = element_text(size = 8))
+```
+  
+## Conclusion
+
+This analysis explores Title V facilities emissions data in New York state. These facilities concentrated around urban centers which contributes to elevated air pollution around these areas. The top industry with most Title V facilities is electric, gas, and sanitary services, which includes 199 facilities . While most facilities report relatively low annual HAP emissions, a small number of high-emitting sites and sectors, particularly Electric, Gas, and Sanitary Services, contribute disproportionately to the statewide totals. The HAPs data display a statistically significant decreasing trend. These findings promotes targeted regulatory oversight and sector-specific or facility-specific mitigation strategies to address environmental and public health risks.
+
+
+## References
+
+USEPA.Operating Permits Issued under Title V of the Clean Air Act.https://www.epa.gov/title-v-operating-permits/basic-information-about-operating-permits

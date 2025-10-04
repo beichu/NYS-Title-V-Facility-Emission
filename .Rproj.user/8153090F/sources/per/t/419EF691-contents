@@ -1,0 +1,246 @@
+---
+title: "Titile V Facilities Emission Data Visualization Demo"
+output: html_notebook
+---
+
+## Project Summary
+This is a summary of Titile V Facilities Emission Data Visualization data source and cleaning steps. 
+#What are Title V facilities are. Why do they need permiting
+
+## Data sources
+The data come from This data visualization uses three data sets:  
+
+1. [Title V Emissions Inventory: Beginning 2010](https://data.ny.gov/Energy-Environment/Title-V-Emissions-Inventory-Beginning-2010/4ry5-tfin/about_data)
+2. [Issued_Title_V_Facility_Permits](https://data.ny.gov/Energy-Environment/Issued-Title-V-Facility-Permits/4n3a-en4b/about_data)
+3. 
+
+
+## Data integration
+
+First explore the dataset and see what kind of data are available.
+
+```{r}
+# Load libraries and data
+library(tidyverse)
+library(pdftools)
+library(skimr)
+
+emission_data <- read.csv("data/Title_V_Emissions_Inventory__Beginning_2010.csv")
+permits <- read.csv("data/Issued_Title_V_Facility_Permits.csv")
+
+
+skim <- skim(emission_data)
+
+```
+The emission data include names and locations as well as SIC code (Standard Industrial Classification Code) for Title V facilities, and a number of reported emissions. 
+Check whether the locations are unique in the emission data for each facility
+```{r}
+
+
+emission_data %>%
+    select(DEC.ID, Facility.Name, Location) %>%
+    distinct() %>%
+    group_by(DEC.ID) %>%
+    add_tally() %>%
+    filter(n > 1)
+
+
+```
+It looks like there are multiple locations for some DEC.ID/Facility name. Does each DEC.ID correspond to one Facility.Name? 
+```{r}
+emission_data %>%
+    select(DEC.ID, Facility.Name) %>%
+    distinct() %>%
+    group_by(DEC.ID) %>%
+    add_tally() %>%
+    filter(n > 1) %>%
+    arrange(DEC.ID) 
+
+```
+
+Next check if the county and municipality columns are unique for each facility
+
+```{}
+```
+So the facility names, coordinates, county and municipality need to be harmonized. To make things simple, the first name appears in the dataset will be chosen to represent the facility name, and the lat/long of the coordinates for the same facility will be averaged. County and municipality will be based on the averaged coordinates.
+
+```{r}
+unique_name <- emission_data %>%
+    select(DEC.ID, Facility.Name, Location) %>%
+    distinct() %>%
+    group_by(DEC.ID) %>%
+    mutate(Location = str_replace_all(Location, "POINT \\(|\\)", "")) %>% # remove extra characters from coordinates
+    separate(Location, into = c("Longitude", "Latitude"), sep = " ") %>% # separate coordinates string into long/lat columns
+    mutate(Longitude = as.numeric(Longitude),
+           Latitude = as.numeric(Latitude)) %>% # convert coordinates into numeric data type
+    mutate(Longitude = mean(Longitude, na.rm = T),
+           Latitude = mean(Latitude, na.rm = T)) %>% # calculate average 
+    slice(1) %>% # select first row of each group
+    rename(Facility_name_clean = Facility.Name)
+
+
+emission_data_clean <- emission_data %>%
+    left_join(unique_name, by = "DEC.ID") %>%
+    select(-Location, -Facility.Name, -County, -Municipality) %>%
+    select(Year, Facility_name_clean, Latitude, Longitude, everything())
+```
+Next I'm going to categorize the SICs based on their major groups using the information found on https://www.osha.gov/data/sic-manual so the SIC can be used in further analysis. There is one missing value in the SIC.Code field, by examining the facility name, we can see that the facility name is "PRINCETON APARTMENTS - MARIANI MANAGEMENT CORP". Searching the SIC manual and the SIC code for Operators of Apartment Buildings is 6513.
+
+```{r}
+library(rvest)
+library(httr)
+
+emission_data_clean <- emission_data_clean %>%
+    mutate(SIC.Code = ifelse(Facility_name_clean == "PRINCETON APARTMENTS - MARIANI MANAGEMENT CORP", 6531, SIC.Code))
+
+SIC_info <- read_html("data/SIC Manual _ Occupational Safety and Health Administration.html") %>%
+    html_nodes("ol ul li") %>%
+    html_text() %>%
+    enframe(value = "SIC") %>%
+    separate(SIC, into = c("Major_Group", "SIC_Desc"), sep = ":") %>%
+    mutate(Major_Group = str_replace(Major_Group, "Major Group ", ""),
+           SIC_Desc = trimws(SIC_Desc)) %>%
+    select(-name)
+
+
+emission_data_clean <- emission_data_clean %>%
+    mutate(SIC_group_code = str_sub(SIC.Code, 1, 2)) %>%
+    left_join(SIC_info, by = join_by("SIC_group_code" == "Major_Group" ))
+```
+
+
+
+Plot the facilities on a map
+```{r}
+library(sf)
+library(basemaps) 
+library(usmap)
+library(tigris)
+
+
+
+# Get NY boundaries
+state_boundaries <- counties(state = "NY") %>%
+    st_transform(crs = st_crs(3857)) # 3857 is the basemap crs 
+
+# Convert to spatial object
+facilities_sf <- st_as_sf(unique_name, coords = c("Longitude", "Latitude"), crs = st_crs(4326)) %>%
+     st_transform(crs = st_crs(3857))
+
+# Get NY state and county boundaries
+
+
+basemap_ggplot(state_boundaries, map_service = "osm", map_type = "streets") +
+    geom_sf(data = state_boundaries, fill = "transparent") +
+    geom_sf(data = facilities_sf, color = "gray30") +
+    #labs(y = "Latitude",
+    #     x = "Longitude") +
+    ggtitle("Title V Facility Locations in New York State") +
+    theme(panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA),
+    panel.grid = element_blank(),
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    plot.title.position = "panel",
+    plot.title = element_text(hjust = 0.5))
+
+
+```
+
+
+# summary statiscs of mean, median, max, min of each analyte for each facility
+```{r}
+
+# pivot emission data into long format for analysis
+emission_data_clean <- emission_data_clean %>%
+    pivot_longer(cols = contains("tons"), names_to = "Analyte", values_to = "Tonage") %>%
+    mutate(Analyte = str_replace(Analyte, "..tons.", ""))
+
+summary_stats <- emission_data_clean %>%
+    group_by(SIC_Desc, Analyte) %>%
+    summarise( Mean = mean(Tonage, na.rm = T), 
+           Min = min(Tonage, na.rm = T),
+           Median = median(Tonage, na.rm = T),
+           Max = max(Tonage, na.rm = T),
+           Total = sum(Tonage, na.rm = T)) %>%
+        mutate(Mean = round(Mean, 2),
+           Min = round(Min, 2),
+           Median = round(Median, 2),
+           Max = round(Max, 2),
+           Total = round(Total, 2))
+    
+```
+
+# Top pollutants by SIC
+```{r}
+library(scales)
+library(cowplot)
+
+pollutants_by_SIC <- summary_stats %>%
+    ungroup() %>%
+    group_by(Analyte) %>%
+    arrange(Analyte, desc(Total)) %>%
+    select(Analyte, SIC_Desc, Total) %>%
+    mutate(idx = row_number()) %>%
+    mutate(idx = ifelse(idx <=5, idx, 6),
+           top5 = ifelse(idx <=5, SIC_Desc, "Other")) %>%
+    group_by(Analyte, idx, top5) %>%
+    summarise(Total = sum(Total))
+
+Analyte_tot <- pollutants_by_SIC %>%
+    ungroup() %>%
+    group_by(Analyte) %>%
+    summarise(Analyte_tot = sum(Total))
+
+
+Percent_by_SIC <- pollutants_by_SIC %>%
+    left_join(Analyte_tot, by = "Analyte") %>%
+    mutate(proportion = Total/Analyte_tot) %>%
+    mutate(percentage_label = paste0(as.character(round(proportion, 3)*100), "%"))
+
+    top5_plot <- function(analyte){
+ggplot(Percent_by_SIC %>% filter(Analyte == analyte)) +
+    geom_col(aes(y = reorder(top5, idx), x = proportion), fill = "grey50") +
+    geom_text(aes(x = proportion, y = reorder(top5, idx), label = percentage_label, hjust = ifelse(proportion > .05, 1.2, -.2))) + 
+    facet_wrap(~ reorder(top5, idx), ncol = 1, scales = "free_y") +
+    labs(title = analyte) +
+    scale_x_continuous(labels = comma,
+                       expand = c(0, 0)) +
+    scale_y_discrete(guide = "none") +
+    theme_minimal() +
+    theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank(),
+        plot.title = element_text(),
+        axis.text = element_blank(), 
+        plot.margin = margin(10, 15, 10, 15),
+        strip.text = element_text(hjust = 0, 
+                                  margin = margin(1, 0, 1, 0), 
+                                  size = rel(0.7), 
+                                  face = "bold"),
+        plot.background = element_rect(color = "black", size = 2))
+        
+}
+
+VOC <- top5_plot("VOC")
+NOx <- top5_plot("NOx")
+CO <- top5_plot("CO")
+CO2 <- top5_plot("CO2")
+Particulates <- top5_plot("Particulates")
+PM10 <- top5_plot("PM10")
+PM2.5 <- top5_plot("PM2.5")
+HAPS <- top5_plot("HAPS")
+SO2 <- top5_plot("SO2")
+
+# combine plots
+combined_plot <- plot_grid(VOC, NOx, CO, CO2, Particulates, PM10, PM2.5, HAPS, SO2, 
+          #labels = c("VOC", "NOx", "CO", "CO2", "Particulates", "PM10", "PM2.5", "HAPS", "SO2"), 
+          ncol = 3)
+
+
+```
+
+
