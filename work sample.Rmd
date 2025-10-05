@@ -1,14 +1,16 @@
 ---
-title: "Data-Driven Exploration of Title V Facility Emissions in New York"
-subtitle: A Work Sample
+title: "Data-Driven Exploration of Title V Facility Emissions in New York (A Work Sample)"
 author: "Bei Chu"
 output: 
-  bookdown::pdf_document2: default
+  bookdown::pdf_document2: 
+    number_sections: false
+    citation_package: biblatex
+biblatexoptions: [sorting=none]
 fontsize: 12pt
 link-citations: true
 toc: false
 urlcolor: blue
-biblio-style: apsr
+biblio-style: apa
 bibliography: references.bib
 figsintext: yes
 header-includes:
@@ -23,30 +25,29 @@ header-includes:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::write_bib(.packages(), file = "references.bib")
 
 ```
 
-## Introduction
+# Introduction
 
-This work sample presents an analysis of reported air pollutant emissions from Title V facilities across New York State. Title V facilities are major sources of air pollution that require operating permits under Title V of the U.S. Clean Air Act. In the state of New York, these permits are issued by the Department of Environmental Conservation and mandate that facilities report emissions of a number of regulated pollutants, including particulates, PM10 and PM2.5, Sulfur Dioxide (SO~2~), Nitrogen Oxides (NO~x~), Volatile Organic Compounds (VOCs), Carbon Monoxide (CO), Hazardous Air Pollutants (HAPs), and Carbon Dioxide (CO~2~).  
+This work sample presents an analysis of reported air pollutant emissions from Title V facilities across New York State. Title V facilities are major sources of air pollution that require operating permits under Title V of the U.S. Clean Air Act [@USEPA]. In the state of New York, these permits are issued by the Department of Environmental Conservation and mandate that facilities report emissions of a number of regulated pollutants, including Carbon Dioxide (CO~2~), Carbon Monoxide (CO), Hazardous Air Pollutants (HAPs), Nitrogen Oxides (NO~x~), Particulates, PM10,  PM2.5, Sulfur Dioxide (SO~2~), and Volatile Organic Compounds (VOCs) [@NYSDEC; @NYSDEC2].  
 
-The analysis includes visualizations of Title V facility locations and summary statistics of reported air emissions. Additionally, it features a focused analysis of HAPs, which are known to cause cancer and other serious health effects.
+The analysis includes visualizations of Title V facility locations and summary statistics of reported air emissions. Additionally, it features a focused analysis of HAPs, which are known to cause cancer and other serious health effects [@USEPA3].
 
 The HAPs analysis addresses the following key questions:  
-1. What is the temporal trend in HAP emissions across New York State?  
-2. Which industry sectors contribute most significantly to HAP emissions?  
-3. What are the spatial patterns of HAP emissions throughout the state?  
+1. What is the trend in HAPs emissions across New York State over time?  
+2. Which industry sectors contribute most significantly to HAPs emissions?  
+3. What are the spatial patterns of HAPs emissions in the state?  
 
 
 
-## Data Sources and Tools
+# Data Sources and Tools
 This analysis draws from two publicly available datasets:
 
 1. [<u>Title V Emissions Inventory: Beginning 2010</u>](https://data.ny.gov/Energy-Environment/Title-V-Emissions-Inventory-Beginning-2010/4ry5-tfin/about_data) - Annual reported emissions from Title V facilities across New York State
 2. [Standard Industrial Classification Code Major Groups)](https://www.osha.gov/data/sic-manual) - Industry classification used to group facilities by sector
 
-The report was prepared using R version 4.5.1 with R Markdown, leveraging a number of R packages for data wrangling, geospatial analysis, and visualization. The complete list of R packages and code for this work can be found at [https://github.com/beichu/NYS-Title-V-Facility-Emission](https://github.com/beichu/NYS-Title-V-Facility-Emission).
+The report was prepared using R version 4.5.1 with R Markdown, leveraging a number of R packages for data wrangling, geospatial analysis, and visualization. The complete list of R packages and source code for this work can be found at [https://github.com/beichu/NYS-Title-V-Facility-Emission](https://github.com/beichu/NYS-Title-V-Facility-Emission).
 
 
 ```{r include=F, echo=F}
@@ -153,12 +154,12 @@ emission_data_clean <- emission_data_clean %>%
     mutate(SIC_group_code = str_sub(SIC.Code, 1, 2)) %>%
     left_join(SIC_info, by = join_by("SIC_group_code" == "Major_Group" ))
 ```
-
+# Results and Discussion
 ## Locations of Title V Facilities in New York
 
-There are a total of `r nrow(unique_facilities)` Title V facilities in the dataset. Figure \@ref(fig:fig1) shows the locations of Title V facilities across New York State. These facilities are notably more concentrated around urban centers, such as New York City, Buffalo, and Albany, reflecting higher levels of industrial activity in those regions. While the rural areas of the state shows relatively fewer facilities, suggesting regional variation in emission sources. 
+There are a total of `r nrow(unique_facilities)` Title V facilities in the emissions dataset. Figure \@ref(fig:fig1) shows the locations of Title V facilities across New York State. These facilities are notably more concentrated around urban centers, such as New York City, Buffalo, and Albany, reflecting higher levels of industrial activity in those regions. While the rural areas of the state shows relatively fewer facilities, suggesting regional variation in emission sources. 
 
-Two counties, Hamilton county and Otsego county, report no Title V facilities. Both counties contain large wilderness areas, have lower population density, and limited industrial development. The observed pattern highlights the importance of considering spatial distribution when making environmental policy and emissions management strategies.
+Two counties, Hamilton county and Otsego county, report no Title V facilities. Both counties contain large wilderness areas, have lower population density, and limited industrial development. The observed pattern highlights the importance of considering spatial distribution when making environmental policy and emission management strategies.
 
 ```{r include = F, message=F, warning=F, echo=F, fig.height=4.5, fig.width=6 }
 
@@ -194,11 +195,11 @@ basemap_ggplot(state_boundaries, map_service = "osm", map_type = "streets", verb
 
 ```
 \pagebreak
-## Industry Sectors of Title V Facilities
+## Industry Composition of Title V Facilities
 
-OSHA's SIC Manual categorizes industries into major groups based on their economic activities. This classification system provides a structured framework for analyzing the types of facilities regulated under Title V. To better understand the industry distribution of Title V facilities, Table \@ref(tab:table1) summarizes the top industry sectors by facility count in New York State. 
+The Standard Industrial Classification (SIC) Manual published by the Occupational Safety and Health Administration (OSHA) categorizes industries into major groups based on their economic activities [@OSHA]. This classification system provides a structured framework for analyzing the types of facilities regulated under Title V. To better understand the industry distribution of Title V facilities, Table \@ref(tab:table1) summarizes the top industry sectors by facility count in New York State. 
 
-The largest sector, electric, gas, and sanitary services, includes 199 facilities. These facilities typically include power plants, natural gas distribution centers, and waste management operations, all of which potentially have large environmental impact.
+The electric, gas, and sanitary services includes 199 facilities and is the largest industry sector in New York based on the number of facilities. These facilities typically include power plants, natural gas distribution centers, and waste management operations, all of which potentially have large environmental impact.
 
 Sectors ranked 2 through 10 each contain between 12 and 30 facilities and represent industries such as health services, chemical and allied products, real estate, and so on. All remaining sectors have 12 or fewer facilities.
 
@@ -223,7 +224,7 @@ table1 <- emission_data_clean %>%
     table1$Industries[11] <- paste0(table1$Industries[11], 
                                 "$^*$")
     
-    kable(table1, caption = "Top Industries in Title V Facilities", align = "l", 
+    kable(table1, caption = "Top Industries in New York Based on the Number of Title V Facilities", align = "l", 
           escape = F, format = "latex", booktabs = T) %>%
     footnote(symbol = c("Other industries having 12 or less facilities")) %>%
     kable_classic() %>%
@@ -235,12 +236,12 @@ table1 <- emission_data_clean %>%
 \pagebreak
 ## Summary Statistics of Reported Emission Data
 
-Table \@ref(tab:table2) presents summary statistics for each reported pollutant, including annual range, mean, median, and cumulative totals across all available years. 
-Carbon dioxide (Co~2~) stands out with the highest cumulative emissions of 603,630,580 tons state wide. CO~2~ also has the highest median annual value of 12,965 tons, indicating that CO~2~ as a ubiquitous byproduct of combustion and industrial activity
+Table \@ref(tab:table2) presents summary statistics for each reported pollutant, including annual range, mean, median, and cumulative totals in New York across all available years. 
+Carbon Dioxide (CO~2~) stands out with the highest cumulative emissions of 603,630,580 tons state wide. CO~2~ also has the highest median annual value of 12,965 tons, indicating that CO~2~ is a ubiquitous byproduct of industrial activities involving combustion.
 
-In contrast, all other pollutants, including CO, NO~x~, SO~2~, Particulates, VOC, PM10, PM2.5, and HAPs, have median annual value of 13.7 tons or less. Despite their lower medians, several of these pollutants still show sizable cumulative totals, particularly CO and NO~x~, which are commonly associated with combustion and transportation-related sources.
+In contrast, all other pollutants, including CO, NO~x~, SO~2~, Particulates, VOC, PM10, PM2.5, and HAPs, have median annual value of 13.7 tons or less. Despite their lower medians, several of these pollutants still show sizable cumulative totals, particularly CO and NO~x~, which are commonly associated with combustion and transportation [@WHO].
 
-For all nine pollutant categories, the median values are consistently lower than the corresponding means. This pattern suggests a right-skewed distribution, where most facilities report relatively low emissions, while a small number of high-emitting facilities significantly elevate the average.
+For all nine pollutant categories, the median values are consistently lower than the corresponding means. This pattern suggests a right-skewed data distribution, where most facilities report relatively low emissions, while a small number of facilities report high emissions, thus significantly elevating the average.
 
 ```{r table2, message=F, warning=F, echo=F}
 
@@ -321,13 +322,13 @@ mk_stats <- mk.test(HAPS_by_year$HAPs, alternative = "less")
 
 ```
 \pagebreak
-## HAPS Temporal Trends Across New York State
+## HAPs Emission Trends Across New York State Over Time
 
-Figure \@ref(fig:fig2) presents the timeseries of total annual HAPs tonnage reported in New York State. Visual inspection of the timeseries plot suggests a gradual decline in reported HAPs emissions over time, with a slight increase after the year 2020. To evaluate the statistical significance of this trend, a Mann-Kendall trend analysis was performed. Mann-Kendal test is a non-parametric test commonly used to assess environmental trends, as it does not assume normality and is robust to outliers. The null hypothesis assumes no monotonic trend in HAPs emissions across the years, while the alternative hypothesis assume a decreasing trend.
+Figure \@ref(fig:fig2) presents the timeseries of total annual HAPs emissions reported in New York State. Visual inspection of the timeseries plot suggests a gradual decline in reported HAPs emissions over time, with a slight increase after the year 2020. To evaluate the statistical significance of this trend, a Mann-Kendall trend analysis was performed. The Mann-Kendall test is a non-parametric test commonly used to assess environmental trends. It does not assume normality and is robust to outliers, making it well-suited for environmental data, which often do not follow normal distributions and contain extreme values. The null hypothesis of this test assumes no monotonic trend in HAPs emissions across the years, while the alternative hypothesis assume a decreasing trend.
 
-The test yielded a value of S `r ifelse(mk_stats$estimates[['S']] < 0, "<", ">=")` and p-value of `r mk_stats$p.value``.Since the p-value is below the conventional threshold of 0.05, the null hypothesis is rejected, indicating a statistically significant decreasing trend at the 0.05 significance level.
+The test yielded a value of S `r ifelse(mk_stats$estimates[['S']] < 0, "< 0", ">=0")` and p-value of `r round(mk_stats$p.value,2)`. Since the p-value is below the conventional threshold of 0.05, the null hypothesis is rejected, indicating a statistically significant decreasing trend at the 0.05 significance level.
 
-```{r fig2, message=F, warning=F, echo=F, fig.height=4.5, fig.width=6.5, fig.align='center', fig.cap="Trends in Reported HAPs in New York State"}
+```{r fig2, message=F, warning=F, echo=F, fig.height=4.5, fig.width=6.5, fig.align='center', fig.cap="Reported HAPs Emission Over Time in New York State"}
 
 # fig 2
 ggplot(HAPS_by_year, aes(x = Year, y = HAPs)) + 
@@ -342,10 +343,10 @@ ggplot(HAPS_by_year, aes(x = Year, y = HAPs)) +
 ```
 
 \pagebreak
-## Top HAPs Emission by Industry
-As previously noted, Hazardous Air Pollutants (HAPs) pose significant risks to human health and were therefore selected for focused analysis in this report. Figure \@ref(fig:fig3) highlights the top industry sectors contributing to total HAP emissions across Title V facilities in New York State. The Electric, Gas, and Sanitary Services sector accounts for the largest share, contributing 48.2% of total reported HAPs. This is followed by Primary Metal Industries at 22.4%, and Chemical and Allied Products at 8.8%. Together, these three sectors account for nearly 80% of all reported HAP emissions, underscoring the disproportionate impact of a few key sectors and provide a foundation for targeted HAPs regulatory and mitigation strategies.
+## Top HAPs Emissions by Industry
+As previously noted, Hazardous Air Pollutants (HAPs) pose significant risks to human health and were therefore selected for focused analysis in this report. Figure \@ref(fig:fig3) highlights the top industry sectors contributing to total HAPs emissions from Title V facilities in New York State. The electric, gas, and sanitary services sector accounts for the largest share, contributing 48.2% of total reported HAPs emissions. This is followed by primary metal industries at 22.4%, and chemical and allied products industries at 8.8%. Together, these three sectors account for nearly 80% of all reported HAP emissions, showing the disproportionate impact of a few key sectors. It also provides insight for developing targeted regulatory and mitigation strategies for reducing HAPs emission.
 
-```{r fig3, message=F, warning=F, echo=F, fig.height=5, fig.width=6, fig.align='center', fig.cap="Title V Facility Hazardous Air Pollutants (HAPs) Emission in New York State"}
+```{r fig3, message=F, warning=F, echo=F, fig.height=5, fig.width=6, fig.align='center', fig.cap="Breakdown of HAPs Emissions from Title V Facilities by Industry Sector in New York State."}
 
 
 HAPs_by_SIC <- emission_data_clean %>%
@@ -396,7 +397,7 @@ ggplot(HAPs_by_SIC) +
 \pagebreak
 
 ## Average Annual HAPs Emission at the Individual Facility Level
-To understand HAPs emission at the individual facility level, Figure \@ref(fig:fig4) visualizes average annual HAPs emissions on a map. Facilities are colored by emission intensity, with darker colors indicating higher average emissions. The majority of facilities emit 12 tons or less of HAPs per year, highlighting a concentration of relatively low-emitting sources. This is consistent to the previous finding that the median HAPs emission is 0 ton per year Table \@ref(tab:table2). However, a small subset of facilities exceeds this threshold, with the highest-emitting site reporting an average of 216 tons annually. This contrast shows a highly skewed distribution, where a few facilities contribute disproportionately to the overall HAPs emissions in the state. The skewness in emission distribution highlights the importance to targeted regulatory and mitigation strategies.
+To understand HAPs emission at the individual facility level, Figure \@ref(fig:fig4) maps the average annual emissions across Title V facilities in New York State. Facilities are colored by emission intensity, with darker colors indicating higher average emissions. The majority of facilities emit 12 tons or less HAPs per year, reflecting a concentration of relatively low-emitting sources. This aligns with the previous finding in Table \@ref(tab:table2) that that median HAPs emission is 0 ton per year, indicating that half of the Title V facilities report no HAPs emission. However, a small number of facilities exceeds this threshold, with the highest reported HAPs value of 216 tons annually. This contrast shows a highly skewed distribution, where a few facilities contribute disproportionately to the overall HAPs emissions in the state. Again, the skewness in emission distribution highlights the importance of targeted HAPs regulatory and mitigation strategies on these high emission sources.
 
 ```{r , include=F, message=F, warning=F, echo=F}
 
@@ -440,12 +441,9 @@ basemap_ggplot(state_boundaries, map_service = "osm", map_type = "streets", verb
     legend.title = element_text(size = 8),
     legend.text = element_text(size = 8))
 ```
-  
-## Conclusion
+\pagebreak
 
-This analysis explores Title V facilities emissions data in New York state. These facilities concentrated around urban centers which contributes to elevated air pollution around these areas. The top industry with most Title V facilities is electric, gas, and sanitary services, which includes 199 facilities . While most facilities report relatively low annual HAP emissions, a small number of high-emitting sites and sectors, particularly Electric, Gas, and Sanitary Services, contribute disproportionately to the statewide totals. The HAPs data display a statistically significant decreasing trend. These findings promotes targeted regulatory oversight and sector-specific or facility-specific mitigation strategies to address environmental and public health risks.
+# Conclusion
 
+This analysis explores emissions data from Title V facilities across New York State. These facilities are geographically more concentrated around urban centers, contributing to elevated air pollution in those areas. The industry with the highest number of Title V facilities is electric, gas, and sanitary services. The top reported pollutants are CO~2~, CO, and NO~x~, indicating combustion related sources. While most facilities report relatively low annual HAPs emissions, a small number of high-emitting facilities and sectors, particularly the electric, gas, and sanitary services sector, contribute disproportionately to the statewide totals. The HAPs data displays a statistically significant decreasing trend over time. These findings promotes a targeted regulatory and sector or facility-specific mitigation approaches to reduce HAPs emissions and public health risks.
 
-## References
-
-USEPA.Operating Permits Issued under Title V of the Clean Air Act.https://www.epa.gov/title-v-operating-permits/basic-information-about-operating-permits
