@@ -237,7 +237,7 @@ table1 <- emission_data_clean %>%
 ## Summary Statistics of Reported Emission Data
 
 Table \@ref(tab:table2) presents summary statistics for each reported pollutant, including annual range, mean, median, and cumulative totals in New York across all available years. 
-Carbon Dioxide (CO~2~) stands out with the highest cumulative emissions of 603,630,580 tons state wide. CO~2~ also has the highest median annual value of 12,965 tons, indicating that CO~2~ is a ubiquitous byproduct of industrial activities involving combustion.
+Carbon Dioxide (CO~2~) stands out with the highest cumulative emissions of 603,630,580 tons statewide. CO~2~ also has the highest median annual value of 12,965 tons, indicating that CO~2~ is a ubiquitous byproduct of industrial activities involving combustion.
 
 In contrast, all other pollutants, including CO, NO~x~, SO~2~, Particulates, VOC, PM10, PM2.5, and HAPs, have median annual value of 13.7 tons or less. Despite their lower medians, several of these pollutants still show sizable cumulative totals, particularly CO and NO~x~, which are commonly associated with combustion and transportation [@WHO].
 
