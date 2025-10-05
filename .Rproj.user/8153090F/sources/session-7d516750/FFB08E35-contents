@@ -46,7 +46,7 @@ This analysis draws from two publicly available datasets:
 1. [<u>Title V Emissions Inventory: Beginning 2010</u>](https://data.ny.gov/Energy-Environment/Title-V-Emissions-Inventory-Beginning-2010/4ry5-tfin/about_data) - Annual reported emissions from Title V facilities across New York State
 2. [Standard Industrial Classification Code Major Groups)](https://www.osha.gov/data/sic-manual) - Industry classification used to group facilities by sector
 
-The report was prepared using R version 4.5.1 with R Markdown, leveraging a number of R packages for data wrangling, geospatial analysis, and visualization. The complete list of R packages and code for this work can be found here
+The report was prepared using R version 4.5.1 with R Markdown, leveraging a number of R packages for data wrangling, geospatial analysis, and visualization. The complete list of R packages and code for this work can be found at [https://github.com/beichu/NYS-Title-V-Facility-Emission](https://github.com/beichu/NYS-Title-V-Facility-Emission).
 
 
 ```{r include=F, echo=F}
